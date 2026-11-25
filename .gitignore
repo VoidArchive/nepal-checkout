@@ -1,0 +1,7 @@
+/nepal-checkout
+*.db*
+.env
+
+# examples/aspnet build output
+examples/aspnet/bin/
+examples/aspnet/obj/

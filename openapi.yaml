@@ -1,0 +1,461 @@
+openapi: 3.1.0
+info:
+  title: nepal-checkout
+  version: 0.1.0
+  summary: Self-hosted payment server for eSewa, Khalti and a mock gateway.
+  description: |
+    One merchant, one API key. The merchant app creates a payment, sends the
+    customer to its `checkout_url`, and learns the outcome from the webhook or
+    from `GET /v1/payments/{id}`.
+
+    Amounts are integer paisa: Rs 100 is `10000`.
+
+    After the gateway, the customer is redirected (303) to `RETURN_URL` with
+    `payment_id` and `order_id` added to the query string. That redirect
+    carries no status on purpose: anyone can type that URL. The app must trust
+    only the webhook or `GET /v1/payments/{id}`.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:8080
+    description: PUBLIC_URL of your deployment
+security:
+  - apiKey: []
+tags:
+  - name: API
+    description: Called by the merchant app, with the API key.
+  - name: Customer
+    description: Opened by the customer's browser. No auth.
+  - name: Ops
+    description: Health check for load balancers and Docker.
+paths:
+  /v1/payments:
+    post:
+      tags: [API]
+      operationId: createPayment
+      summary: Create a payment for an order
+      description: |
+        Starts a payment at the gateway and returns it. A repeat for an order
+        that already has a paid payment, or a pending payment with the same
+        provider, returns that payment (200) instead of a new one; a repeat with
+        a different amount is a 409. Unknown JSON fields are rejected. The body
+        is limited to 1 MiB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+            example:
+              order_id: order-1042
+              provider: khalti
+              amount: 10000
+              description: 2 x Momo plate
+              customer_email: ram@example.com
+              customer_phone: '9800000000'
+      responses:
+        '200':
+          description: The new payment, or the order's existing active payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+              example:
+                id: k3j5n7q2m4p6r8t2v4x6
+                order_id: order-1042
+                provider: khalti
+                amount: 10000
+                status: pending
+                provider_status: ''
+                transaction_id: ''
+                checkout_url: http://localhost:8080/pay/k3j5n7q2m4p6r8t2v4x6
+                created_at: '2026-11-25T08:00:00Z'
+                updated_at: '2026-11-25T08:00:00Z'
+        '400':
+          description: Invalid JSON, a missing order_id, a non-positive amount, or a provider that is not enabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: invalid_request
+                  message: 'payments: unknown provider: "fonepay"'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The order already has an active payment with a different amount.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: amount_conflict
+                  message: this order already has a payment with a different amount
+        '500':
+          $ref: '#/components/responses/Internal'
+        '502':
+          description: The gateway refused or failed to start the payment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: gateway_error
+                  message: the payment gateway did not accept the payment
+  /v1/payments/{id}:
+    get:
+      tags: [API]
+      operationId: getPayment
+      summary: Get a payment and its webhook delivery log
+      parameters:
+        - $ref: '#/components/parameters/PaymentID'
+      responses:
+        '200':
+          description: The payment, with every webhook event queued for it, oldest first.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Payment'
+                  - type: object
+                    required: [webhooks]
+                    properties:
+                      webhooks:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Delivery'
+              example:
+                id: k3j5n7q2m4p6r8t2v4x6
+                order_id: order-1042
+                provider: khalti
+                amount: 10000
+                status: paid
+                provider_status: COMPLETE
+                transaction_id: GFq9PFS7b2iYvL8Lir9oXe
+                checkout_url: http://localhost:8080/pay/k3j5n7q2m4p6r8t2v4x6
+                created_at: '2026-11-25T08:00:00Z'
+                updated_at: '2026-11-25T08:01:12Z'
+                webhooks:
+                  - id: 7QXWZ3JY5N2KAVRM4BDHT6C9PE
+                    state: delivered
+                    attempts: 1
+                    last_status: 200
+                    last_error: ''
+                    next_attempt_at: '2026-11-25T08:01:12Z'
+                    created_at: '2026-11-25T08:01:12Z'
+                    delivered_at: '2026-11-25T08:01:13Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No payment with this ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: not_found
+                  message: payment not found
+        '500':
+          $ref: '#/components/responses/Internal'
+  /pay/{id}:
+    get:
+      tags: [Customer]
+      operationId: payPage
+      summary: Send the customer to the gateway
+      description: |
+        This is the `checkout_url`. For a pending payment it redirects to the
+        gateway, or, for gateways that need a form POST (eSewa), serves a page
+        that auto-submits that form. For a payment that is no longer pending it
+        redirects to the return URL. Responses are `Cache-Control: no-store`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentID'
+      responses:
+        '200':
+          description: Auto-submitting form to the gateway.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: '<!doctype html>...<form method="post" action="https://rc-epay.esewa.com.np/api/epay/main/v2/form">...'
+        '303':
+          description: Redirect to the gateway (pending) or to the return URL (no longer pending).
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+        '404':
+          $ref: '#/components/responses/PlainNotFound'
+        '500':
+          $ref: '#/components/responses/PlainInternal'
+  /callback/{id}:
+    get:
+      tags: [Customer]
+      operationId: callback
+      summary: Gateway return (callback) URL
+      description: |
+        The gateway sends the customer here with its own query parameters
+        (eSewa `data`, Khalti `pidx` and others). The server verifies them with
+        the gateway; a failed verification is only logged, and the payment
+        stays pending until the background status check settles it. The
+        customer is always redirected to the return URL, which carries
+        `payment_id` and `order_id` but no status.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PaymentID'
+      responses:
+        '303':
+          description: Redirect to RETURN_URL with payment_id and order_id.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+        '404':
+          $ref: '#/components/responses/PlainNotFound'
+        '500':
+          $ref: '#/components/responses/PlainInternal'
+  /healthz:
+    get:
+      tags: [Ops]
+      operationId: healthz
+      summary: Liveness and database check
+      security: []
+      responses:
+        '200':
+          description: The database answers.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: ok
+        '503':
+          description: The database does not answer.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: database unavailable
+webhooks:
+  paymentStatusChanged:
+    post:
+      operationId: paymentStatusChanged
+      summary: A payment changed status
+      description: |
+        Sent to `WEBHOOK_URL` once per status change, in order per payment.
+        Any 2xx marks it delivered; anything else (including a redirect, which
+        is not followed) is retried after 1, 2, 4 ... minutes, capped at one
+        hour, and given up after 24 hours (delivery state `failed`).
+
+        Verify before trusting it: split `X-Checkout-Signature` into `t` and
+        `v1`, compute hex HMAC-SHA256 of `"<t>.<raw body>"` with
+        `WEBHOOK_SECRET`, compare in constant time, and reject an old `t`.
+        `t` is the time of this attempt, so a retry carries a fresh one.
+        Deduplicate on the event `id`: a delivery can arrive more than once.
+      security: []
+      parameters:
+        - name: X-Checkout-Signature
+          in: header
+          required: true
+          description: '`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>" with WEBHOOK_SECRET>`'
+          schema:
+            type: string
+            pattern: '^t=\d+,v1=[0-9a-f]{64}$'
+          example: t=1764057672,v1=5d41402abc4b2a76b9719d911017c592ae2b1c9f0f6b8e2f1d6a3c7e9b0d4f21
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEvent'
+            example:
+              id: 7QXWZ3JY5N2KAVRM4BDHT6C9PE
+              type: payment.status_changed
+              created_at: '2026-11-25T08:01:12Z'
+              payment:
+                id: k3j5n7q2m4p6r8t2v4x6
+                order_id: order-1042
+                provider: khalti
+                amount: 10000
+                status: paid
+                provider_status: COMPLETE
+                transaction_id: GFq9PFS7b2iYvL8Lir9oXe
+                checkout_url: http://localhost:8080/pay/k3j5n7q2m4p6r8t2v4x6
+                created_at: '2026-11-25T08:00:00Z'
+                updated_at: '2026-11-25T08:01:12Z'
+      responses:
+        '200':
+          description: Any 2xx acknowledges the event. Return it quickly.
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: '`Authorization: Bearer <API_KEY>`'
+  parameters:
+    PaymentID:
+      name: id
+      in: path
+      required: true
+      description: Payment ID, 20 characters from a-z and 2-7.
+      schema:
+        type: string
+      example: k3j5n7q2m4p6r8t2v4x6
+  headers:
+    Location:
+      schema:
+        type: string
+        format: uri
+      example: https://shop.example.com/orders/done?order_id=order-1042&payment_id=k3j5n7q2m4p6r8t2v4x6
+  responses:
+    Unauthorized:
+      description: Missing or wrong API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: unauthorized
+              message: missing or wrong API key
+    Internal:
+      description: Database error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: internal
+              message: internal error
+    PlainNotFound:
+      description: No payment with this ID.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: 404 page not found
+    PlainInternal:
+      description: Database error.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: internal error
+  schemas:
+    CreatePayment:
+      type: object
+      additionalProperties: false
+      required: [order_id, provider, amount]
+      properties:
+        order_id:
+          type: string
+          minLength: 1
+          description: Your order ID. One order has at most one paid payment.
+        provider:
+          type: string
+          enum: [esewa, khalti, mock]
+          description: Must be enabled in the server config (`mock` only with MOCK=true).
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Paisa. Rs 100 is 10000.
+        description:
+          type: string
+        customer_email:
+          type: string
+        customer_phone:
+          type: string
+    Payment:
+      type: object
+      required: [id, order_id, provider, amount, status, provider_status, transaction_id, checkout_url, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        order_id:
+          type: string
+        provider:
+          type: string
+          enum: [esewa, khalti, mock]
+        amount:
+          type: integer
+          format: int64
+          description: Paisa. Rs 100 is 10000.
+        status:
+          type: string
+          enum: [pending, paid, failed, expired, refunded]
+          description: Only `paid` means the money arrived.
+        provider_status:
+          type: string
+          description: Last status the gateway reported (COMPLETE, PENDING, FAILED, REFUNDED, CANCELLED), empty before the first check. For display only.
+        transaction_id:
+          type: string
+          description: Gateway transaction ID, empty until the gateway gives one.
+        checkout_url:
+          type: string
+          format: uri
+          description: Send the customer here (`GET /pay/{id}`).
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Delivery:
+      type: object
+      description: One webhook event and its delivery state.
+      required: [id, state, attempts, last_status, last_error, next_attempt_at, created_at, delivered_at]
+      properties:
+        id:
+          type: string
+          description: Event ID, the same as `id` in the webhook body.
+        state:
+          type: string
+          enum: [pending, delivered, failed]
+        attempts:
+          type: integer
+        last_status:
+          type: integer
+          description: HTTP status of the last attempt, 0 when there was no response.
+        last_error:
+          type: string
+        next_attempt_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: [string, 'null']
+          format: date-time
+    WebhookEvent:
+      type: object
+      required: [id, type, created_at, payment]
+      properties:
+        id:
+          type: string
+          description: Event ID. Deduplicate on it.
+        type:
+          type: string
+          const: payment.status_changed
+        created_at:
+          type: string
+          format: date-time
+        payment:
+          $ref: '#/components/schemas/Payment'
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthorized, not_found, amount_conflict, gateway_error, internal]
+            message:
+              type: string
