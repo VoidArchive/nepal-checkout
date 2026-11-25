@@ -1,0 +1,3 @@
+/nepal-checkout
+*.db*
+.env
