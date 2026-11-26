@@ -365,6 +365,7 @@ components:
           description: Paisa. Rs 100 is 10000.
         description:
           type: string
+          description: Shown to the customer on the gateway page. Default is the `order_id`.
         customer_email:
           type: string
         customer_phone:

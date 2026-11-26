@@ -394,7 +394,7 @@ func (s stub) InitiatePayment(_ context.Context, req *core.PaymentRequest) (*cor
 		return nil, errors.New("gateway down: secret detail")
 	}
 	return &core.PaymentResponse{IsFormPOST: true, TargetURL: "https://gw.example/form", TransactionID: req.OrderID,
-		FormFields: map[string]string{"amount": "10", "evil": `"><script>alert(1)</script>`}}, nil
+		FormFields: map[string]string{"amount": "10", "desc": req.Description, "evil": `"><script>alert(1)</script>`}}, nil
 }
 
 func (stub) VerifyPayment(context.Context, *core.VerifyRequest) (*core.VerifyResponse, error) {
@@ -414,6 +414,7 @@ func TestFormPostPage(t *testing.T) {
 	page := string(html)
 	assert.Contains(t, page, `<form method="post" action="https://gw.example/form">`)
 	assert.Contains(t, page, `<input type="hidden" name="amount" value="10">`)
+	assert.Contains(t, page, `<input type="hidden" name="desc" value="order-8">`) // no description: the order ID is sent
 	assert.Contains(t, page, `value="&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"`)
 	assert.NotContains(t, page, "<script>alert")
 	assert.Contains(t, page, `<button type="submit">`)
@@ -423,4 +424,13 @@ func TestFormPostPage(t *testing.T) {
 	msg := decode[apiError](t, resp)
 	assert.Equal(t, "gateway_error", msg.Error.Code)
 	assert.NotContains(t, msg.Error.Message, "secret detail")
+}
+
+func TestRepeatCreateDoesNotCallGateway(t *testing.T) {
+	e := newEnv(t)
+	e.a.svc.Providers["stub"] = stub{}
+	first := e.create("order-10", 1000, "stub")
+
+	e.a.svc.Providers["stub"] = stub{fail: true} // the gateway is down for the retry
+	assert.Equal(t, first.ID, e.create("order-10", 1000, "stub").ID)
 }
