@@ -18,9 +18,10 @@ The server uses the [nepal-payment-go](https://github.com/VoidArchive/nepal-paym
 
 This is the first version. Read these limits before you use it.
 
-- eSewa: the server was tested with the eSewa sandbox to the eSewa login page. A full payment through the server was not tested.
-- Khalti: not tested with the Khalti sandbox.
-- The full flow (payment, callback, webhook) was tested only with the mock provider.
+- eSewa: tested with the eSewa sandbox. A payment was paid through the server, and the webhook arrived with a correct signature.
+- Khalti: tested with the Khalti sandbox in the same way.
+- For the two providers, a payment was also tested where the customer paid and did not come back to the server. The server found the payment and sent the webhook.
+- Not tested with a real provider: a failed payment, a cancelled payment, and a production (live) merchant account.
 - The server supports one merchant and one API key.
 - Refunds, FonePay and ConnectIPS are not available.
 
@@ -53,6 +54,8 @@ The quickest procedure uses the mock provider. You do not need a merchant accoun
    docker build -t nepal-checkout .
    docker run --env-file .env -p 8080:8080 -v checkout-data:/data nepal-checkout
    ```
+
+   Each release also has an image, `ghcr.io/voidarchive/nepal-checkout`, and programs for Linux (amd64 and arm64) on the releases page.
 
    Without Docker:
 
