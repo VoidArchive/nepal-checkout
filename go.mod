@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/stretchr/testify v1.12.1
-	github.com/voidarchive/nepal-payment-go/v2 v2.1.1-0.20261126072102-0b1e4e2f0d34
+	github.com/voidarchive/nepal-payment-go/v2 v2.2.0
 	modernc.org/sqlite v1.63.0
 )
 
