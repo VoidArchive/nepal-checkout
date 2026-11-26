@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -177,7 +178,8 @@ func (a *app) createPayment(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := a.svc.Create(r.Context(), payments.CreateParams{
 		OrderID: in.OrderID, Provider: in.Provider, Amount: in.Amount,
-		Description: in.Description, CustomerEmail: in.CustomerEmail, CustomerPhone: in.CustomerPhone,
+		Description:   cmp.Or(in.Description, in.OrderID), // Khalti rejects a blank order name
+		CustomerEmail: in.CustomerEmail, CustomerPhone: in.CustomerPhone,
 	})
 	switch {
 	case err == nil:
