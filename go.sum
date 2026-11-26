@@ -14,8 +14,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/voidarchive/nepal-payment-go/v2 v2.2.0 h1:hmCV/Eg/J+emTjXJDscUpj9aetWXWM48601zukhzJo8=
-github.com/voidarchive/nepal-payment-go/v2 v2.2.0/go.mod h1:kgzZ/md5A/m3r9e6ji9x/cws7QXLQaTbyeOC3r/nTNY=
+github.com/voidarchive/nepal-payment-go/v2 v2.2.1 h1:8TvlqgL0EPqOac2NCz40HLDaI/Qv0mWL+ascDLEc6OU=
+github.com/voidarchive/nepal-payment-go/v2 v2.2.1/go.mod h1:kgzZ/md5A/m3r9e6ji9x/cws7QXLQaTbyeOC3r/nTNY=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/mod v0.42.0 h1:ICeL3t2L30ljSPHHxDnR4fqVcBt/zR2zJAb9juavmQg=
