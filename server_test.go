@@ -425,3 +425,12 @@ func TestFormPostPage(t *testing.T) {
 	assert.Equal(t, "gateway_error", msg.Error.Code)
 	assert.NotContains(t, msg.Error.Message, "secret detail")
 }
+
+func TestRepeatCreateDoesNotCallGateway(t *testing.T) {
+	e := newEnv(t)
+	e.a.svc.Providers["stub"] = stub{}
+	first := e.create("order-10", 1000, "stub")
+
+	e.a.svc.Providers["stub"] = stub{fail: true} // the gateway is down for the retry
+	assert.Equal(t, first.ID, e.create("order-10", 1000, "stub").ID)
+}

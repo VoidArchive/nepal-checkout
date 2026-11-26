@@ -170,7 +170,6 @@ The directory [`examples/aspnet`](examples/aspnet) contains an ASP.NET Core exam
 - Set a limit on the request rate in the reverse proxy.
 - Keep a backup of the database file.
 - The server stores payments for one merchant. Use one server for each merchant.
-- Each `POST /v1/payments` request starts a session with the provider, also when the payment exists. If the provider is not available, a repeated request gets the error `502`. Send the request again later.
 - If your application is on the host and the server is in Docker, make sure that the container can connect to `WEBHOOK_URL`.
 - A customer can start a payment with one provider and then pay with a different provider for the same order. If the customer pays the two payments, the two payments become `paid`. Your application gets two webhooks and must refund one payment.
 

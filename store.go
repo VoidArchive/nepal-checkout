@@ -114,14 +114,8 @@ func (s *store) create(ctx context.Context, p *payments.Payment) (*payments.Paym
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	existing, err := scanPayment(tx.QueryRowContext(ctx, `SELECT `+paymentCols+` FROM payments
-		WHERE order_id = ? AND (status = 'paid' OR (status = 'pending' AND provider = ?))
-		ORDER BY created_at LIMIT 1`, p.OrderID, p.Provider))
-	switch {
-	case err == nil:
-		return existing, nil
-	case !errors.Is(err, sql.ErrNoRows):
-		return nil, err
+	if existing, err := findActive(ctx, tx, p.OrderID, p.Provider); existing != nil || err != nil {
+		return existing, err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO payments (`+paymentCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.OrderID, p.Provider, p.Amount, p.Status, p.ProviderStatus, p.ProviderRef, p.TransactionID,
@@ -130,6 +124,28 @@ func (s *store) create(ctx context.Context, p *payments.Payment) (*payments.Paym
 		return nil, err
 	}
 	return nil, tx.Commit()
+}
+
+// findActive returns the order's paid payment, or its pending payment with this provider, or nil.
+func findActive(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, orderID, provider string) (*payments.Payment, error) {
+	p, err := scanPayment(q.QueryRowContext(ctx, `SELECT `+paymentCols+` FROM payments
+		WHERE order_id = ? AND (status = 'paid' OR (status = 'pending' AND provider = ?))
+		ORDER BY created_at LIMIT 1`, orderID, provider))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return p, err
+}
+
+// FindActive implements payments.ActiveFinder: a repeated create does not call the gateway.
+func (s *store) FindActive(ctx context.Context, orderID, provider string) (*payments.Payment, error) {
+	p, err := findActive(ctx, s.db, orderID, provider)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", errDB, err)
+	}
+	return p, nil
 }
 
 func (s *store) Get(ctx context.Context, id string) (*payments.Payment, error) {
